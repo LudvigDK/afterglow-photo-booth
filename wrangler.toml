@@ -1,0 +1,32 @@
+name = "afterglow-photo-booth"
+main = "worker/index.ts"
+compatibility_date = "2026-01-15"
+workers_dev = true
+preview_urls = false
+
+[vars]
+FRONTEND_URL = "http://127.0.0.1:5173/"
+STORAGE_LIMIT_BYTES = "5000000000"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "afterglow-metadata"
+database_id = "9e57bdff-107e-4299-96f5-9adf0231fc9b"
+migrations_dir = "worker/migrations"
+
+[[r2_buckets]]
+binding = "IMAGES"
+bucket_name = "afterglow-photos"
+
+[[ratelimits]]
+name = "LOGIN_LIMIT"
+namespace_id = "1001"
+simple = { limit = 8, period = 60 }
+
+[[ratelimits]]
+name = "UPLOAD_LIMIT"
+namespace_id = "1002"
+simple = { limit = 60, period = 60 }
+
+[triggers]
+crons = ["*/10 * * * *"]

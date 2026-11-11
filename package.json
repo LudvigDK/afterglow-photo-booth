@@ -1,0 +1,41 @@
+{
+  "name": "afterglow-photo-booth",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "dev:api": "wrangler dev --port 8787 --ip 127.0.0.1 --test-scheduled --var FRONTEND_URL:http://127.0.0.1:5173/",
+    "db:local": "wrangler d1 migrations apply DB --local",
+    "db:remote": "wrangler d1 migrations apply DB --remote",
+    "deploy:api": "wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "node --test tests/*.test.mjs",
+    "test:browser": "playwright test"
+  },
+  "dependencies": {
+    "@fontsource-variable/dm-sans": "^5",
+    "@fontsource-variable/manrope": "^5",
+    "lucide-react": "^0.468.0",
+    "qrcode.react": "^4",
+    "react": "^19",
+    "react-dom": "^19",
+    "react-router-dom": "^7"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5",
+    "@playwright/test": "^1",
+    "@types/node": "^24",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@vitejs/plugin-react": "^5",
+    "typescript": "~5.9.3",
+    "vite": "^7",
+    "wrangler": "^4"
+  }
+}
