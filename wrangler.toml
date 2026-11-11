@@ -5,7 +5,7 @@ workers_dev = true
 preview_urls = false
 
 [vars]
-FRONTEND_URL = "http://127.0.0.1:5173/"
+FRONTEND_URL = "https://ludvigdk.github.io/afterglow-photo-booth/"
 STORAGE_LIMIT_BYTES = "5000000000"
 
 [[d1_databases]]
