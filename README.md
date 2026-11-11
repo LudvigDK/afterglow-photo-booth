@@ -75,7 +75,7 @@ Delete the temporary secrets file after a successful deploy. Wrangler prints the
 ### 4. Connect the devices
 
 1. Open the deployed site. Choose **Admin dashboard → Sign in**, then enter the Worker’s `ADMIN_ACCESS_KEY` on the Worker-hosted sign-in page. Create your first event and save any settings.
-2. Under **Device links**, open or scan **Photo booth** on the tablet. Allow camera access. Use the switch-camera control or device picker and tap **Take photo**. For a real event, keep the tablet on power and configure its screen-lock behavior.
+2. Under **Device links**, open or scan **Photo booth** on the tablet. Allow camera access. Use the gear in the top bar to choose, switch, or mirror the camera. Tap anywhere on the preview to start the countdown. After scanning the QR code, tap **Take another photo** to return to the preview. For a real event, keep the tablet on power and configure its screen-lock behavior.
 3. Open **Live display** on the TV browser or a computer connected to the display. Select fullscreen. On browsers without element fullscreen, the button expands the display to the viewport. Browser chrome may remain visible.
 4. Scan the booth’s result QR code with a phone. It opens the individual photo page. **Download photo** saves the stored JPEG. Native sharing sends the file on supported browsers, with a link fallback. Use the public gallery link for browsing when enabled.
 

@@ -1,4 +1,31 @@
-import { expect, test, webkit } from '@playwright/test';
+import { expect, test, webkit, type Page } from '@playwright/test';
+
+async function expectResultToFit(page: Page, width: number, height: number) {
+  await page.setViewportSize({ width, height });
+  const qr = page.getByRole('img', { name: 'Download your photo' });
+  const preview = page.getByAltText('Your captured photo');
+  const another = page.getByRole('button', { name: 'Take another photo' });
+  await expect.poll(async () => {
+    const [code, photo, button] = await Promise.all([qr.boundingBox(), preview.boundingBox(), another.boundingBox()]);
+    if (!code || !photo || !button) return false;
+    const fits = (box: typeof code) => box.x >= 0 && box.y >= 0 && box.x + box.width <= width && box.y + box.height <= height;
+    const panelFollowsPhoto = width > height ? code.x >= photo.x + photo.width : code.y >= photo.y + photo.height;
+    return {
+      withinViewport: [code, photo, button].every(fits),
+      panelFollowsPhoto,
+      qrSize: Math.round(code.width),
+      squareQr: Math.abs(code.width - code.height) < 1,
+      buttonBelowQr: button.y >= code.y + code.height,
+    };
+  }, { message: `Photo, QR code, and return button fit at ${width} × ${height}` }).toMatchObject({
+    withinViewport: true,
+    panelFollowsPhoto: true,
+    qrSize: expect.any(Number),
+    squareQr: true,
+    buttonBelowQr: true,
+  });
+  expect((await qr.boundingBox())!.width).toBeGreaterThanOrEqual(96);
+}
 
 test('admin, kiosk, independent live display and mobile guest flow', async ({ page, browser, baseURL }) => {
   const name = 'Afterglow browser test ' + Date.now();
@@ -30,15 +57,29 @@ test('admin, kiosk, independent live display and mobile guest flow', async ({ pa
   await kiosk.goto(kioskUrl);
   expect(kiosk.url()).not.toContain('key=');
   await kiosk.getByRole('button', { name: 'Enable camera' }).click();
-  const take = kiosk.getByRole('button', { name: 'Take photo', exact: true });
+  const take = kiosk.getByRole('button', { name: 'Press to capture', exact: true });
   await expect(take).toBeEnabled();
+  const gear = kiosk.getByRole('button', { name: 'Camera settings' });
+  const cameraSettings = kiosk.getByRole('dialog', { name: 'Camera settings' });
+  await expect(kiosk.getByRole('combobox', { name: 'Camera' })).toBeHidden();
+  await expect(kiosk.getByRole('button', { name: 'Switch camera' })).toBeHidden();
+  await gear.click();
+  await expect(cameraSettings.getByRole('combobox', { name: 'Camera' })).toBeVisible();
+  await expect(cameraSettings.getByRole('button', { name: 'Switch camera' })).toBeVisible();
+  const mirror = cameraSettings.getByRole('checkbox', { name: 'Mirror preview' });
+  await mirror.uncheck();
+  await expect(kiosk.locator('video')).not.toHaveClass('mirror');
+  await mirror.check();
+  await expect(kiosk.locator('video')).toHaveClass('mirror');
+  await cameraSettings.getByRole('button', { name: 'Close dialog' }).click();
+  await expect(cameraSettings).toBeHidden();
   await kiosk.route('**/api/events/*/photos', (route) => route.fulfill({
     status: 507,
     headers: { 'Access-Control-Allow-Origin': baseURL! },
     contentType: 'application/json',
     body: JSON.stringify({ error: 'Storage is temporarily unavailable for this test.' }),
   }));
-  await take.click();
+  await take.click({ position: { x: 16, y: 16 } });
   await expect(kiosk.getByText('3', { exact: true })).toBeVisible();
   await expect(kiosk.getByRole('button', { name: 'Retry upload' })).toBeVisible();
   await expect(kiosk.getByAltText('Your captured photo')).toBeVisible();
@@ -50,6 +91,10 @@ test('admin, kiosk, independent live display and mobile guest flow', async ({ pa
   await kiosk.getByRole('button', { name: 'Retry upload' }).click();
   await expect(kiosk.getByRole('heading', { name: 'Scan to save' })).toBeVisible();
   await expect(kiosk.getByRole('img', { name: 'Download your photo' })).toBeVisible();
+  await expectResultToFit(kiosk, 1180, 820);
+  await expectResultToFit(kiosk, 568, 320);
+  await expectResultToFit(kiosk, 320, 480);
+  await expectResultToFit(kiosk, 390, 844);
   const firstLink = await kiosk.getByRole('link', { name: 'Open photo link' }).getAttribute('href');
   const firstId = firstLink!.split('/').at(-1)!;
   const tvPhoto = tv.locator('.live-images');
@@ -57,8 +102,12 @@ test('admin, kiosk, independent live display and mobile guest flow', async ({ pa
   await expect(gallery.getByRole('button', { name: /View photo at/ })).toHaveCount(1);
   await galleryContext.close();
 
+  await kiosk.clock.install();
   await kiosk.getByRole('button', { name: 'Take another photo' }).click();
   await expect(take).toBeEnabled();
+  await kiosk.clock.fastForward(4000);
+  await expect(take).toBeEnabled();
+  await expect(kiosk.getByRole('img', { name: 'Download your photo' })).toBeHidden();
   await take.click();
   const secondLink = kiosk.getByRole('link', { name: 'Open photo link' });
   await expect(secondLink).toBeVisible();

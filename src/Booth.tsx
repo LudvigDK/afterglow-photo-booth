@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
-import { Camera, CameraOff, Images, RotateCcw, ScanLine, SwitchCamera } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Camera, CameraOff, Images, RotateCcw, ScanLine, Settings, SwitchCamera } from 'lucide-react';
 import { Link, useParams } from 'react-router-dom';
 import type { EventInfo, Photo } from '../shared/model';
 import { api, ApiError, appUrl, messageOf, readToken } from './api';
@@ -20,8 +20,11 @@ function Booth({ id }: { id: string }) {
   const [enabled, setEnabled] = useState(false);
   const [facing, setFacing] = useState<'user' | 'environment'>('user');
   const [device, setDevice] = useState('');
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [mirrorOverride, setMirrorOverride] = useState<boolean>();
   const [restart, setRestart] = useState(0);
   const [countdown, setCountdown] = useState<number | null>(null);
+  const [capturing, setCapturing] = useState(false);
   const [draft, setDraft] = useState<Draft>();
   const [preview, setPreview] = useState('');
   const [restoring, setRestoring] = useState(Boolean(token));
@@ -74,17 +77,19 @@ function Booth({ id }: { id: string }) {
     return () => window.removeEventListener('beforeunload', prevent);
   }, [draft, photo]);
 
+  const showCamera = useCallback(() => {
+    setPhoto(undefined);
+    setDraft(undefined);
+    setError('');
+    setEnabled(true);
+  }, []);
+
   const autoReturn = state.data?.settings.autoReturn ?? 0;
   useEffect(() => {
     if (!photo || !autoReturn) return;
-    const timer = window.setTimeout(() => {
-      setPhoto(undefined);
-      setDraft(undefined);
-      setError('');
-      setEnabled(true);
-    }, autoReturn * 1000);
+    const timer = window.setTimeout(showCamera, autoReturn * 1000);
     return () => clearTimeout(timer);
-  }, [photo, autoReturn]);
+  }, [photo, autoReturn, showCamera]);
 
   async function send(d: Draft) {
     if (uploadController.current) return;
@@ -123,6 +128,7 @@ function Booth({ id }: { id: string }) {
   async function take() {
     if (!camera.video.current || captureBusy.current || document.hidden) return;
     captureBusy.current = true;
+    setCapturing(true);
     setError('');
     try {
       const shot = await captureFrame(camera.video.current);
@@ -134,11 +140,12 @@ function Booth({ id }: { id: string }) {
       if (active.current) setError(messageOf(issue));
     } finally {
       captureBusy.current = false;
+      if (active.current) setCapturing(false);
     }
   }
 
   function startCountdown() {
-    if (countdown !== null || countTimer.current !== undefined || captureBusy.current || !camera.ready || draft) return;
+    if (countdown !== null || countTimer.current !== undefined || captureBusy.current || !camera.ready || draft || restoring || settingsOpen) return;
     const seconds = state.data?.settings.countdown ?? 3;
     if (!seconds) { void take(); return; }
     setCountdown(seconds);
@@ -154,43 +161,41 @@ function Booth({ id }: { id: string }) {
   }
 
   const event = state.data;
+  const mirrored = mirrorOverride ?? (camera.front && Boolean(event?.settings.mirror));
+  const busy = countdown !== null || capturing || restoring;
   return <div className={`kiosk ${full.expanded ? 'expanded' : ''}`} ref={full.root}>
-    <header className="kiosk-header"><Brand /><span className="kiosk-name">{event?.name}</span>
-      <div className="header-actions">{event?.settings.galleryVisible && <Link className="icon-button" to={`/gallery/${id}`} title="Event gallery" aria-label="Event gallery"><Images size={20} /></Link>}
-        <FullscreenButton active={full.fullscreen} onClick={full.toggle} /></div>
+    <header className="kiosk-header"><Brand /><span className="kiosk-name" title={event?.name}>{event?.name}</span>
+      <div className="header-actions">
+        {token && event && !draft && <button type="button" className="icon-button" aria-label="Camera settings" title="Camera settings"
+          aria-haspopup="dialog" disabled={busy} onClick={() => setSettingsOpen(true)}><Settings size={20} /></button>}
+        {event?.settings.galleryVisible && <Link className="icon-button" to={`/gallery/${id}`} title="Event gallery" aria-label="Event gallery"><Images size={20} /></Link>}
+        <FullscreenButton active={full.fullscreen} onClick={full.toggle} />
+      </div>
     </header>
     {!token ? <main className="kiosk-message"><ScanLine size={40} /><h1>Connect this booth</h1><p>Open the booth link from your event dashboard on this device.</p><Link className="button button-primary" to="/admin">Event dashboard</Link></main>
       : !event && !draft ? state.error ? <main className="kiosk-message"><Notice retry={state.refresh}>{state.error.message}</Notice></main> : <Loading>Connecting to the event…</Loading>
       : <main className="booth-main">
         <section className="camera-view" hidden={Boolean(draft)} aria-label="Camera view">
-          <video ref={camera.video} playsInline muted autoPlay className={camera.front && event?.settings.mirror ? 'mirror' : ''}
+          <video ref={camera.video} playsInline muted autoPlay className={mirrored ? 'mirror' : ''}
             onPlaying={() => camera.setReady(true)} onEmptied={() => camera.setReady(false)} />
+          {restoring && <div className="camera-message"><Loading>Checking for an unsent photo…</Loading></div>}
           {!enabled && !restoring && <div className="camera-message"><Camera size={42} /><h1>Ready for your close-up?</h1><button className="button button-primary" onClick={() => setEnabled(true)}>Enable camera</button></div>}
           {enabled && !camera.ready && !camera.error && <div className="camera-message"><Loading>Starting the camera…</Loading></div>}
           {camera.error && enabled && <div className="camera-message"><CameraOff size={34} /><p>{camera.error}</p><button className="button button-secondary" onClick={() => setRestart((n) => n + 1)}>Restart camera</button></div>}
+          {camera.ready && !busy && <button type="button" className="capture-preview" onClick={startCountdown}>
+            <span><Camera aria-hidden="true" size={28} /> Press to capture</span>
+          </button>}
           {countdown !== null && <div className="countdown" aria-live="assertive"><span key={countdown}>{countdown}</span></div>}
+          {capturing && <div className="camera-message"><Loading>Capturing photo…</Loading></div>}
         </section>
-        {!draft && <div className="booth-controls">
-          <div className="camera-options">
-            <button className="icon-button" aria-label="Switch camera" title="Switch camera" disabled={!enabled || countdown !== null} onClick={() => {
-              setDevice(''); setFacing((side) => side === 'user' ? 'environment' : 'user');
-            }}><SwitchCamera size={22} /></button>
-            {camera.devices.length > 1 && <select aria-label="Camera" value={device} disabled={countdown !== null} onChange={(e) => setDevice(e.target.value)}>
-              <option value="">Automatic camera</option>{camera.devices.map((entry, index) => <option key={entry.deviceId} value={entry.deviceId}>{entry.label || `Camera ${index + 1}`}</option>)}
-            </select>}
-          </div>
-          <button className="shutter" disabled={!camera.ready || countdown !== null || restoring} onClick={startCountdown}><Camera size={26} /> Take photo</button>
-          {error && <Notice>{error}</Notice>}
-        </div>}
+        {!draft && error && <Notice>{error}</Notice>}
         {draft && <section className="booth-result">
           <div className="result-image">{preview && <img src={preview} alt="Your captured photo" />}</div>
-          <div className="result-panel">
-            {photo ? <><span className="section-icon"><ScanLine size={23} /></span><h1>Scan to save</h1><p>Open your phone’s camera and point it at the QR code.</p>
-              <Qr url={appUrl('/photo/' + photo.id)} label="Download your photo" />
+          <div className={`result-panel${photo ? ' result-scan' : ''}`}>
+            {photo ? <><h1>Scan to save</h1>
+              <div className="result-qr"><Qr url={appUrl('/photo/' + photo.id)} label="Download your photo" /></div>
               <a className="text-link" href={appUrl('/photo/' + photo.id)} target="_blank" rel="noopener noreferrer">Open photo link</a>
-              <button className="button button-primary" onClick={() => {
-                setPhoto(undefined); setDraft(undefined); setError(''); setEnabled(true);
-              }}><Camera size={21} /> Take another photo</button></>
+              <button type="button" className="button button-primary" onClick={showCamera}><Camera size={21} /> Take another photo</button></>
               : <><h1>Your photo</h1>{uploading ? <Loading>Uploading your photo…</Loading> : <>
                 {error && <Notice>{error}</Notice>}
                 <button className="button button-primary" onClick={() => void send(draft)}><RotateCcw size={20} /> Retry upload</button>
@@ -199,12 +204,26 @@ function Booth({ id }: { id: string }) {
           </div>
         </section>}
       </main>}
+    {settingsOpen && <Modal title="Camera settings" onClose={() => setSettingsOpen(false)}>
+      <label className="field">Camera
+        <select value={device} onChange={(e) => setDevice(e.target.value)}>
+          <option value="">Automatic camera</option>
+          {camera.devices.map((entry, index) => <option key={entry.deviceId} value={entry.deviceId}>{entry.label || `Camera ${index + 1}`}</option>)}
+        </select>
+      </label>
+      <button type="button" className="button button-secondary" onClick={() => {
+        setDevice('');
+        setFacing(camera.ready ? (camera.front ? 'environment' : 'user') : (facing === 'user' ? 'environment' : 'user'));
+      }}><SwitchCamera size={21} /> Switch camera</button>
+      <label className="toggle"><input type="checkbox" checked={mirrored} onChange={(e) => setMirrorOverride(e.target.checked)} /> Mirror preview</label>
+    </Modal>}
     {discard && <Modal title="Discard this capture?" onClose={() => setDiscard(false)}>
       <p>This capture will be removed from this device.</p><div className="modal-actions"><button className="button button-secondary" onClick={() => setDiscard(false)}>Keep photo</button>
         <button className="button button-danger" onClick={async () => {
           try {
             if (draft && persisted.current) await clearDraft(id, draft.requestId);
-            setDiscard(false); setDraft(undefined); setError(''); setEnabled(true);
+            setDiscard(false);
+            showCamera();
           } catch (issue) { setDiscard(false); setError(messageOf(issue)); }
         }}>Discard photo</button></div>
     </Modal>}
